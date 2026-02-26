@@ -1,10 +1,10 @@
 require('dotenv').config();
 const mysql = require('mysql2/promise');
 
+console.log("🔎 Démarrage test MySQL...");
+
 (async () => {
   try {
-    console.log("🔎 Test connexion MySQL...");
-
     const connection = await mysql.createConnection({
       host: process.env.DB_HOST,
       user: process.env.DB_USER,
@@ -18,7 +18,12 @@ const mysql = require('mysql2/promise');
     await connection.end();
 
   } catch (error) {
-    console.error("❌ Erreur connexion MySQL :");
-    console.error(error);
+    console.log("❌ ERREUR DÉTAILLÉE :");
+    console.log(JSON.stringify(error, null, 2));
   }
 })();
+
+// Empêche Railway d'arrêter le container
+setInterval(() => {
+  console.log("⏳ En attente...");
+}, 10000);
