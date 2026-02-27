@@ -1,7 +1,8 @@
-console.log("VERSION 9999");
 require('dotenv').config();
 const { Client, GatewayIntentBits } = require('discord.js');
 const mysql = require('mysql2/promise');
+
+console.log("=== VERSION MYSQL_PUBLIC_URL ===");
 
 const client = new Client({
   intents: [
@@ -15,25 +16,19 @@ let db;
 
 async function connectDB() {
   try {
-    console.log("=== TEST VARIABLES ===");
-    console.log("MYSQLHOST:", process.env.MYSQLHOST);
-    console.log("MYSQLUSER:", process.env.MYSQLUSER);
-    console.log("MYSQLDATABASE:", process.env.MYSQLDATABASE);
-    console.log("MYSQLPORT:", process.env.MYSQLPORT);
+    const url = process.env.MYSQL_PUBLIC_URL;
 
-    console.log("Connexion MySQL...");
+    if (!url) {
+      throw new Error("MYSQL_PUBLIC_URL est undefined !");
+    }
 
-    db = await mysql.createConnection({
-      host: process.env.MYSQLHOST,
-      user: process.env.MYSQLUSER,
-      password: process.env.MYSQLPASSWORD,
-      database: process.env.MYSQLDATABASE,
-      port: process.env.MYSQLPORT
-    });
+    console.log("Connexion via MYSQL_PUBLIC_URL...");
 
-    console.log("MySQL connecté !");
+    db = await mysql.createConnection(url);
+
+    console.log("✅ MySQL connecté !");
   } catch (err) {
-    console.error("ERREUR MYSQL DETAILLEE :", err);
+    console.error("❌ ERREUR MYSQL :", err);
     process.exit(1);
   }
 }
@@ -55,7 +50,7 @@ async function start() {
 }
 
 client.once('ready', () => {
-  console.log(`Bot connecté : ${client.user.tag}`);
+  console.log(`🤖 Bot connecté : ${client.user.tag}`);
 });
 
 client.on('messageCreate', async (message) => {
