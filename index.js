@@ -12,9 +12,9 @@ const client = new Client({
 
 let db;
 
-/* ============================
+/* ===============================
    Connexion MySQL
-============================ */
+================================ */
 
 async function connectDB() {
   if (!process.env.MYSQL_URL) {
@@ -25,9 +25,9 @@ async function connectDB() {
   console.log("✅ MySQL connecté !");
 }
 
-/* ============================
-   Vérification automatique des news
-============================ */
+/* ===============================
+   Vérification des news
+================================ */
 
 async function checkNews() {
   try {
@@ -38,7 +38,6 @@ async function checkNews() {
     if (rows.length === 0) return;
 
     const channel = await client.channels.fetch(process.env.NEWS_CHANNEL_ID);
-
     if (!channel) {
       console.error("Channel introuvable");
       return;
@@ -53,13 +52,20 @@ async function checkNews() {
         .setFooter({ text: "Nouvelle publication" })
         .setTimestamp(new Date(news.created_at));
 
-      // Si une image existe
-      if (news.image && news.image.startsWith("http")) {
-  embed.setImage(news.image);
-} else if (news.image) {
-  const fullImageUrl = `https://https://dev.black-sheep.space/actualites/${news.image}`;
-  embed.setImage(fullImageUrl);
-}
+      /* ===============================
+         Gestion image sécurisée
+      ================================ */
+
+      if (news.image && typeof news.image === "string") {
+
+        if (news.image.startsWith("http")) {
+          embed.setImage(news.image);
+        } 
+        else if (process.env.SITE_URL) {
+          const fullUrl = `${process.env.SITE_URL}/uploads/${news.image}`;
+          embed.setImage(fullUrl);
+        }
+      }
 
       await channel.send({ embeds: [embed] });
 
@@ -76,13 +82,18 @@ async function checkNews() {
   }
 }
 
-/* ============================
-   Démarrage du bot
-============================ */
+/* ===============================
+   Démarrage
+================================ */
 
 async function start() {
+
   if (!process.env.TOKEN) {
     throw new Error("TOKEN manquant !");
+  }
+
+  if (!process.env.NEWS_CHANNEL_ID) {
+    throw new Error("NEWS_CHANNEL_ID manquant !");
   }
 
   await connectDB();
@@ -96,9 +107,9 @@ client.once('clientReady', () => {
   setInterval(checkNews, 15000);
 });
 
-/* ============================
+/* ===============================
    Commandes simples
-============================ */
+================================ */
 
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
