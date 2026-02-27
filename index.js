@@ -2,9 +2,6 @@ require('dotenv').config();
 const { Client, GatewayIntentBits } = require('discord.js');
 const mysql = require('mysql2/promise');
 
-// ==========================
-// DISCORD CLIENT
-// ==========================
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -13,57 +10,42 @@ const client = new Client({
   ]
 });
 
-// ==========================
-// MYSQL CONNECTION
-// ==========================
 let db;
 
 async function connectDB() {
   try {
-    console.log("🔎 Test connexion MySQL...");
+    console.log("Connexion MySQL...");
 
-    if (!process.env.MYSQL_URL) {
+    const url = process.env.MYSQL_URL;
+
+    if (!url) {
       throw new Error("MYSQL_URL est undefined !");
     }
 
-    console.log("MYSQL_URL =", process.env.MYSQL_URL);
+    db = await mysql.createConnection(url);
 
-    db = await mysql.createConnection({
-      uri: process.env.MYSQL_URL,
-      ssl: { rejectUnauthorized: false }
-    });
-
-    console.log("✅ MySQL connecté !");
+    console.log("MySQL connecté !");
   } catch (err) {
-    console.error("❌ Erreur MySQL :", err);
+    console.error("Erreur MySQL :", err);
     process.exit(1);
   }
 }
 
-// ==========================
-// BOT READY
-// ==========================
 client.once('ready', async () => {
-  console.log(`🤖 Connecté en tant que ${client.user.tag}`);
+  console.log(`Connecté en tant que ${client.user.tag}`);
   await connectDB();
 });
 
-// ==========================
-// COMMANDES
-// ==========================
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
 
   if (message.content === "!ping") {
-    message.reply("🏓 Pong !");
+    message.reply("pong");
   }
 });
 
-// ==========================
-// LOGIN
-// ==========================
 if (!process.env.TOKEN) {
-  console.error("❌ TOKEN manquant !");
+  console.error("TOKEN manquant !");
   process.exit(1);
 }
 
