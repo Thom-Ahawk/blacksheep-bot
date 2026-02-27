@@ -54,9 +54,12 @@ async function checkNews() {
         .setTimestamp(new Date(news.created_at));
 
       // Si une image existe
-      if (news.image) {
-        embed.setImage(news.image);
-      }
+      if (news.image && news.image.startsWith("http")) {
+  embed.setImage(news.image);
+} else if (news.image) {
+  const fullImageUrl = `https://https://dev.black-sheep.space/actualites/${news.image}`;
+  embed.setImage(fullImageUrl);
+}
 
       await channel.send({ embeds: [embed] });
 
