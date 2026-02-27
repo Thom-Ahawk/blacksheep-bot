@@ -13,6 +13,8 @@ const client = new Client({
 let db;
 
 async function connectDB() {
+  console.log("MYSQL_URL =", process.env.MYSQL_URL);
+
   if (!process.env.MYSQL_URL) {
     throw new Error("MYSQL_URL manquant !");
   }
