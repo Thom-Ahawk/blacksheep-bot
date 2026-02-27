@@ -13,35 +13,22 @@ const client = new Client({
 let db;
 
 async function connectDB() {
-  try {
-    if (!process.env.MYSQL_URL) {
-      throw new Error("MYSQL_URL manquant !");
-    }
-
-    console.log("Connexion MySQL...");
-
-    db = await mysql.createConnection(process.env.MYSQL_URL);
-
-    console.log("✅ MySQL connecté !");
-  } catch (err) {
-    console.error("❌ Erreur MySQL :", err);
-    process.exit(1);
+  if (!process.env.MYSQL_URL) {
+    throw new Error("MYSQL_URL manquant !");
   }
+
+  console.log("Connexion MySQL...");
+  db = await mysql.createConnection(process.env.MYSQL_URL);
+  console.log("✅ MySQL connecté !");
 }
 
 async function start() {
-  try {
-    if (!process.env.TOKEN) {
-      throw new Error("TOKEN manquant !");
-    }
-
-    await connectDB();
-    await client.login(process.env.TOKEN);
-
-  } catch (err) {
-    console.error("❌ ERREUR FATALE :", err);
-    process.exit(1);
+  if (!process.env.TOKEN) {
+    throw new Error("TOKEN manquant !");
   }
+
+  await connectDB();
+  await client.login(process.env.TOKEN);
 }
 
 client.once('ready', () => {
