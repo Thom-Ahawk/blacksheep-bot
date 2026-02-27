@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits } = require('discord.js');
 const mysql = require('mysql2/promise');
 
 const client = new Client({
@@ -27,6 +27,7 @@ async function connectDB() {
 
 /* ===============================
    Vérification des news
+   (Titre + lien uniquement)
 ================================ */
 
 async function checkNews() {
@@ -38,43 +39,23 @@ async function checkNews() {
     if (rows.length === 0) return;
 
     const channel = await client.channels.fetch(process.env.NEWS_CHANNEL_ID);
-    if (!channel) {
-      console.error("Channel introuvable");
-      return;
-    }
+    if (!channel) return;
 
     for (const news of rows) {
 
-      const embed = new EmbedBuilder()
-        .setColor("#0099ff")
-        .setTitle(news.title)
-        .setDescription(news.content.substring(0, 4000))
-        .setFooter({ text: "Nouvelle publication" })
-        .setTimestamp(new Date(news.created_at));
+      const articleUrl = `${process.env.SITE_URL}/news/${news.slug}`;
 
-      /* ===============================
-         Gestion image sécurisée
-      ================================ */
+      const message = `📰 **${news.title}**
+🔗 ${articleUrl}`;
 
-      if (news.image && typeof news.image === "string") {
-
-        if (news.image.startsWith("http")) {
-          embed.setImage(news.image);
-        } 
-        else if (process.env.SITE_URL) {
-          const fullUrl = `${process.env.SITE_URL}/uploads/${news.image}`;
-          embed.setImage(fullUrl);
-        }
-      }
-
-      await channel.send({ embeds: [embed] });
+      await channel.send(message);
 
       await db.query(
         "UPDATE news SET sent = 1 WHERE id = ?",
         [news.id]
       );
 
-      console.log("📰 News envoyée :", news.title);
+      console.log("News envoyée :", news.title);
     }
 
   } catch (err) {
@@ -94,6 +75,10 @@ async function start() {
 
   if (!process.env.NEWS_CHANNEL_ID) {
     throw new Error("NEWS_CHANNEL_ID manquant !");
+  }
+
+  if (!process.env.SITE_URL) {
+    throw new Error("SITE_URL manquant !");
   }
 
   await connectDB();
