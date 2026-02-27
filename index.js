@@ -12,18 +12,17 @@ const client = new Client({
 
 let db;
 
+// Connexion MySQL
 async function connectDB() {
-  console.log("MYSQL_URL =", process.env.MYSQL_URL);
-
   if (!process.env.MYSQL_URL) {
     throw new Error("MYSQL_URL manquant !");
   }
 
-  console.log("Connexion MySQL...");
   db = await mysql.createConnection(process.env.MYSQL_URL);
   console.log("✅ MySQL connecté !");
 }
 
+// Démarrage du bot
 async function start() {
   if (!process.env.TOKEN) {
     throw new Error("TOKEN manquant !");
@@ -33,10 +32,12 @@ async function start() {
   await client.login(process.env.TOKEN);
 }
 
-client.once('ready', () => {
+// Événement prêt (corrigé pour v14)
+client.once('clientReady', () => {
   console.log(`🤖 Bot connecté : ${client.user.tag}`);
 });
 
+// Commandes
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
 
@@ -45,8 +46,13 @@ client.on('messageCreate', async (message) => {
   }
 
   if (message.content === "!dbtest") {
-    const [rows] = await db.query("SELECT 1 + 1 AS result");
-    message.reply("DB OK : " + rows[0].result);
+    try {
+      const [rows] = await db.query("SELECT 1 + 1 AS result");
+      message.reply("DB OK : " + rows[0].result);
+    } catch (err) {
+      console.error("Erreur DB :", err);
+      message.reply("Erreur base de données.");
+    }
   }
 });
 
