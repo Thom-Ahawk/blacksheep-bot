@@ -12,28 +12,29 @@ const client = new Client({
 
 let db;
 
-async function connectDB() {
+async function start() {
   try {
     console.log("Connexion MySQL...");
 
     const url = process.env.MYSQL_URL;
-
-    if (!url) {
-      throw new Error("MYSQL_URL est undefined !");
-    }
+    if (!url) throw new Error("MYSQL_URL undefined");
 
     db = await mysql.createConnection(url);
 
     console.log("MySQL connecté !");
+
+    if (!process.env.TOKEN) throw new Error("TOKEN undefined");
+
+    await client.login(process.env.TOKEN);
+
   } catch (err) {
-    console.error("Erreur MySQL :", err);
+    console.error("ERREUR FATALE :", err);
     process.exit(1);
   }
 }
 
-client.once('ready', async () => {
-  console.log(`Connecté en tant que ${client.user.tag}`);
-  await connectDB();
+client.once('ready', () => {
+  console.log(`Bot connecté : ${client.user.tag}`);
 });
 
 client.on('messageCreate', async (message) => {
@@ -44,9 +45,4 @@ client.on('messageCreate', async (message) => {
   }
 });
 
-if (!process.env.TOKEN) {
-  console.error("TOKEN manquant !");
-  process.exit(1);
-}
-
-client.login(process.env.TOKEN);
+start();
