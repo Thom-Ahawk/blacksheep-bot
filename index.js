@@ -1,3 +1,4 @@
+console.log("VERSION 9999");
 require('dotenv').config();
 const { Client, GatewayIntentBits } = require('discord.js');
 const mysql = require('mysql2/promise');
@@ -12,18 +13,38 @@ const client = new Client({
 
 let db;
 
-async function start() {
+async function connectDB() {
   try {
+    console.log("=== TEST VARIABLES ===");
+    console.log("MYSQLHOST:", process.env.MYSQLHOST);
+    console.log("MYSQLUSER:", process.env.MYSQLUSER);
+    console.log("MYSQLDATABASE:", process.env.MYSQLDATABASE);
+    console.log("MYSQLPORT:", process.env.MYSQLPORT);
+
     console.log("Connexion MySQL...");
 
-    const url = process.env.MYSQL_URL;
-    if (!url) throw new Error("MYSQL_URL undefined");
-
-    db = await mysql.createConnection(url);
+    db = await mysql.createConnection({
+      host: process.env.MYSQLHOST,
+      user: process.env.MYSQLUSER,
+      password: process.env.MYSQLPASSWORD,
+      database: process.env.MYSQLDATABASE,
+      port: process.env.MYSQLPORT
+    });
 
     console.log("MySQL connecté !");
+  } catch (err) {
+    console.error("ERREUR MYSQL DETAILLEE :", err);
+    process.exit(1);
+  }
+}
 
-    if (!process.env.TOKEN) throw new Error("TOKEN undefined");
+async function start() {
+  try {
+    if (!process.env.TOKEN) {
+      throw new Error("TOKEN manquant !");
+    }
+
+    await connectDB();
 
     await client.login(process.env.TOKEN);
 
