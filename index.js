@@ -1,4 +1,4 @@
-rrequire('dotenv').config();
+require('dotenv').config();
 const { 
   Client, 
   GatewayIntentBits, 
@@ -20,9 +20,32 @@ const client = new Client({
 
 let db;
 
-/* ===============================
+/* ===================================
+   Couleur selon nom de catégorie
+=================================== */
+
+function getCategoryColor(categoryName) {
+
+  if (!categoryName) return "#e74c3c";
+
+  switch (categoryName.toLowerCase()) {
+    case "armée":
+      return "#6c757d"; // Gris militaire
+
+    case "logistique":
+      return "#2ecc71"; // Vert logistique
+
+    case "exploration":
+      return "#3498db"; // Bleu exploration
+
+    default:
+      return "#e74c3c"; // Rouge modéré
+  }
+}
+
+/* ===================================
    Connexion MySQL
-================================ */
+=================================== */
 
 async function connectDB() {
   if (!process.env.MYSQL_URL) {
@@ -33,15 +56,19 @@ async function connectDB() {
   console.log("✅ MySQL connecté !");
 }
 
-/* ===============================
+/* ===================================
    Vérification des news
-================================ */
+=================================== */
 
 async function checkNews() {
   try {
-    const [rows] = await db.query(
-      "SELECT * FROM news WHERE sent = 0 ORDER BY id ASC"
-    );
+    const [rows] = await db.query(`
+      SELECT news.*, categories.name AS category_name
+      FROM news
+      LEFT JOIN categories ON news.category_id = categories.id
+      WHERE news.sent = 0
+      ORDER BY news.id ASC
+    `);
 
     if (rows.length === 0) return;
 
@@ -53,21 +80,15 @@ async function checkNews() {
       const articleUrl =
         `${process.env.SITE_URL}/${process.env.NEWS_PATH}/${news.slug}`;
 
-      /* ===============================
-         EMBED STYLÉ
-      ================================ */
-
       const embed = new EmbedBuilder()
-        .setColor("#ff0055") // couleur personnalisable
+        .setColor(getCategoryColor(news.category_name))
         .setTitle(news.title)
-        .setURL(articleUrl) // 👈 titre cliquable
+        .setURL(articleUrl)
         .setDescription("Cliquez sur le bouton ci-dessous pour lire l’article.")
-        .setFooter({ text: "Black Sheep News" })
+        .setFooter({ 
+          text: `Catégorie : ${news.category_name || "Non définie"}`
+        })
         .setTimestamp();
-
-      /* ===============================
-         BOUTON CLIQUABLE
-      ================================ */
 
       const button = new ButtonBuilder()
         .setLabel("Lire l'article")
@@ -77,6 +98,7 @@ async function checkNews() {
       const row = new ActionRowBuilder().addComponents(button);
 
       await channel.send({
+        content: "@everyone 🚨 Nouvelle publication !",
         embeds: [embed],
         components: [row]
       });
@@ -94,9 +116,9 @@ async function checkNews() {
   }
 }
 
-/* ===============================
+/* ===================================
    Démarrage
-================================ */
+=================================== */
 
 async function start() {
 
