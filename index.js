@@ -24,7 +24,7 @@ const client = new Client({
 let db;
 
 /* ===================================================
-   NORMALISATION TEXTE
+   NORMALISATION TEXTE (accents + espaces)
 =================================================== */
 
 function normalizeText(text) {
@@ -90,24 +90,6 @@ async function checkNews() {
 
       const articleUrl = `${process.env.SITE_URL}/${process.env.NEWS_PATH}/${news.slug}`;
 
-      /* ================= IMAGE ================= */
-
-      let imageUrl = null;
-
-      if (news.image) {
-
-  const baseUrl = process.env.SITE_URL.replace(/\/$/, "");
-
-  const imageUrl = news.image.startsWith("http")
-    ? news.image
-    : `${baseUrl}/assets/img/news/${news.image}`;
-
-  console.log("Image URL envoyée :", imageUrl);
-
-  embed.setImage(imageUrl);
-  embed.setThumbnail(imageUrl);
-}
-
       /* ================= EMBED ================= */
 
       const embed = new EmbedBuilder()
@@ -120,9 +102,20 @@ async function checkNews() {
         })
         .setTimestamp();
 
-      if (imageUrl) {
-        embed.setThumbnail(imageUrl); // petite image
-        embed.setImage(imageUrl);     // grande bannière
+      /* ================= IMAGE (APRES CREATION EMBED) ================= */
+
+      if (news.image) {
+
+        const baseUrl = process.env.SITE_URL.replace(/\/$/, "");
+
+        const imageUrl = news.image.startsWith("http")
+          ? news.image
+          : `${baseUrl}/assets/img/news/${news.image}`;
+
+        console.log("Image URL envoyée :", imageUrl);
+
+        embed.setImage(imageUrl);      // grande bannière
+        embed.setThumbnail(imageUrl);  // petite image
       }
 
       /* ================= BOUTON ================= */
