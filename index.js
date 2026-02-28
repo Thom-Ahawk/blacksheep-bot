@@ -27,7 +27,6 @@ async function connectDB() {
 
 /* ===============================
    Vérification des news
-   (Titre + lien uniquement)
 ================================ */
 
 async function checkNews() {
@@ -43,9 +42,11 @@ async function checkNews() {
 
     for (const news of rows) {
 
-      const articleUrl = `${process.env.SITE_URL}/actualites/${news.slug}`;
+      const articleUrl =
+        `${process.env.SITE_URL}/${process.env.NEWS_PATH}/${news.slug}`;
 
-      const message = `📰 **${news.title}**
+      const message =
+        `📰 **${news.title}**
 🔗 ${articleUrl}`;
 
       await channel.send(message);
@@ -81,14 +82,16 @@ async function start() {
     throw new Error("SITE_URL manquant !");
   }
 
+  if (!process.env.NEWS_PATH) {
+    throw new Error("NEWS_PATH manquant !");
+  }
+
   await connectDB();
   await client.login(process.env.TOKEN);
 }
 
 client.once('clientReady', () => {
   console.log(`🤖 Bot connecté : ${client.user.tag}`);
-
-  // Vérifie les news toutes les 15 secondes
   setInterval(checkNews, 15000);
 });
 
