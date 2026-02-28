@@ -43,7 +43,7 @@ async function checkNews() {
 
     for (const news of rows) {
 
-      const articleUrl = `${process.env.SITE_URL}/news/${news.slug}`;
+      const articleUrl = `${process.env.SITE_URL}/actualites/${news.slug}`;
 
       const message = `📰 **${news.title}**
 🔗 ${articleUrl}`;
