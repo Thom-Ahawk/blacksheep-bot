@@ -24,7 +24,7 @@ const client = new Client({
 let db;
 
 /* ===================================================
-   NORMALISATION TEXTE (accents + espaces)
+   NORMALISATION TEXTE
 =================================================== */
 
 function normalizeText(text) {
@@ -81,16 +81,11 @@ async function checkNews() {
     if (!rows.length) return;
 
     const channel = await client.channels.fetch(process.env.NEWS_CHANNEL_ID);
-    if (!channel) {
-      console.error("❌ Channel introuvable.");
-      return;
-    }
+    if (!channel) return console.error("❌ Channel news introuvable.");
 
     for (const news of rows) {
 
       const articleUrl = `${process.env.SITE_URL}/${process.env.NEWS_PATH}/${news.slug}`;
-
-      /* ================= EMBED ================= */
 
       const embed = new EmbedBuilder()
         .setColor(getCategoryColor(news.category_name))
@@ -102,23 +97,15 @@ async function checkNews() {
         })
         .setTimestamp();
 
-      /* ================= IMAGE (APRES CREATION EMBED) ================= */
-
       if (news.image) {
-
         const baseUrl = process.env.SITE_URL.replace(/\/$/, "");
-
         const imageUrl = news.image.startsWith("http")
           ? news.image
           : `${baseUrl}/assets/img/news/${news.image}`;
 
-        console.log("Image URL envoyée :", imageUrl);
-
-        embed.setImage(imageUrl);      // grande bannière
-        embed.setThumbnail(imageUrl);  // petite image
+        embed.setImage(imageUrl);
+        embed.setThumbnail(imageUrl);
       }
-
-      /* ================= BOUTON ================= */
 
       const button = new ButtonBuilder()
         .setLabel("Lire l'article")
@@ -127,15 +114,11 @@ async function checkNews() {
 
       const row = new ActionRowBuilder().addComponents(button);
 
-      /* ================= ENVOI ================= */
-
       await channel.send({
         content: "@everyone 🚨 Nouvelle publication !",
         embeds: [embed],
         components: [row]
       });
-
-      /* ================= UPDATE DB ================= */
 
       await db.query(
         "UPDATE news SET sent = 1 WHERE id = ?",
@@ -151,6 +134,72 @@ async function checkNews() {
 }
 
 /* ===================================================
+   CHECK EVENTS
+=================================================== */
+
+async function checkEvents() {
+  try {
+
+    const [rows] = await db.query(`
+      SELECT *
+      FROM events
+      WHERE sent = 0
+      ORDER BY start_datetime ASC
+    `);
+
+    if (!rows.length) return;
+
+    const channel = await client.channels.fetch(process.env.EVENT_CHANNEL_ID);
+    if (!channel) return console.error("❌ Channel events introuvable.");
+
+    for (const event of rows) {
+
+      const startTimestamp = Math.floor(new Date(event.start_datetime).getTime() / 1000);
+
+      const endTimestamp = event.end_datetime
+        ? Math.floor(new Date(event.end_datetime).getTime() / 1000)
+        : null;
+
+      const embed = new EmbedBuilder()
+        .setColor(0x8b5cf6)
+        .setTitle("📅 Nouvel événement")
+        .setDescription(`**${event.title}**\n\n${event.description || "Aucune description"}`)
+        .addFields(
+          {
+            name: "🕒 Début",
+            value: `<t:${startTimestamp}:F>`,
+            inline: true
+          },
+          {
+            name: "🏁 Fin",
+            value: endTimestamp
+              ? `<t:${endTimestamp}:F>`
+              : "Non définie",
+            inline: true
+          }
+        )
+        .setFooter({ text: "Black Sheep Events" })
+        .setTimestamp();
+
+      const message = await channel.send({
+        content: "@everyone 📣 Nouvel événement !",
+        embeds: [embed]
+      });
+
+      await db.query(
+        "UPDATE events SET sent = 1, discord_message_id = ? WHERE id = ?",
+        [message.id, event.id]
+      );
+
+      console.log("📅 Event envoyé :", event.title);
+    }
+
+  } catch (err) {
+    console.error("❌ Erreur checkEvents :", err);
+  }
+}
+
+/* ===================================================
    START
 =================================================== */
 
@@ -159,6 +208,7 @@ async function start() {
   const requiredVars = [
     "TOKEN",
     "NEWS_CHANNEL_ID",
+    "EVENT_CHANNEL_ID",
     "SITE_URL",
     "NEWS_PATH",
     "MYSQL_URL"
@@ -176,7 +226,9 @@ async function start() {
 
 client.once("clientReady", () => {
   console.log(`🤖 Bot connecté : ${client.user.tag}`);
+
   setInterval(checkNews, 15000);
+  setInterval(checkEvents, 15000);
 });
 
 start();
