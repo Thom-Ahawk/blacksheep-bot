@@ -24,7 +24,7 @@ const client = new Client({
 let db;
 
 /* ===================================================
-   NORMALISATION TEXTE (accents + espaces)
+   NORMALISATION TEXTE
 =================================================== */
 
 function normalizeText(text) {
@@ -36,7 +36,7 @@ function normalizeText(text) {
 }
 
 /* ===================================================
-   COULEURS PAR CATÉGORIE
+   COULEUR PAR CATÉGORIE
 =================================================== */
 
 function getCategoryColor(categoryName) {
@@ -97,7 +97,7 @@ async function checkNews() {
       if (news.image) {
         imageUrl = news.image.startsWith("http")
           ? news.image
-          : `${process.env.SITE_URL}/uploads/${news.image}`;
+          : `${process.env.SITE_URL}/Black-Sheep/assets/img/news/${news.image}`;
       }
 
       /* ================= EMBED ================= */
@@ -113,7 +113,7 @@ async function checkNews() {
         .setTimestamp();
 
       if (imageUrl) {
-        embed.setThumbnail(imageUrl); // petite image à droite
+        embed.setThumbnail(imageUrl); // petite image
         embed.setImage(imageUrl);     // grande bannière
       }
 
