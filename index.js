@@ -24,113 +24,12 @@ const client = new Client({
 let db;
 
 /* ===================================================
-   NORMALISATION TEXTE
-=================================================== */
-
-function normalizeText(text) {
-  return text
-    ?.toLowerCase()
-    .trim()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-}
-
-/* ===================================================
-   COULEUR PAR CATÉGORIE
-=================================================== */
-
-function getCategoryColor(categoryName) {
-  const normalized = normalizeText(categoryName);
-
-  const colors = {
-    armee: 0x6c757d,
-    logistique: 0x2ecc71,
-    exploration: 0x3498db
-  };
-
-  return colors[normalized] || 0xe74c3c;
-}
-
-/* ===================================================
    CONNEXION MYSQL
 =================================================== */
 
 async function connectDB() {
-  if (!process.env.MYSQL_URL) {
-    throw new Error("❌ MYSQL_URL manquant !");
-  }
-
   db = await mysql.createConnection(process.env.MYSQL_URL);
   console.log("✅ MySQL connecté !");
-}
-
-/* ===================================================
-   CHECK NEWS
-=================================================== */
-
-async function checkNews() {
-  try {
-    const [rows] = await db.query(`
-      SELECT news.*, categories.name AS category_name
-      FROM news
-      LEFT JOIN categories ON news.category_id = categories.id
-      WHERE news.sent = 0
-      ORDER BY news.id ASC
-    `);
-
-    if (!rows.length) return;
-
-    const channel = await client.channels.fetch(process.env.NEWS_CHANNEL_ID);
-    if (!channel) return console.error("❌ Channel news introuvable.");
-
-    for (const news of rows) {
-
-      const articleUrl = `${process.env.SITE_URL}/${process.env.NEWS_PATH}/${news.slug}`;
-
-      const embed = new EmbedBuilder()
-        .setColor(getCategoryColor(news.category_name))
-        .setTitle(news.title)
-        .setURL(articleUrl)
-        .setDescription("Cliquez sur le bouton ci-dessous pour lire l’article.")
-        .setFooter({
-          text: `Catégorie : ${news.category_name || "Non définie"}`
-        })
-        .setTimestamp();
-
-      if (news.image) {
-        const baseUrl = process.env.SITE_URL.replace(/\/$/, "");
-        const imageUrl = news.image.startsWith("http")
-          ? news.image
-          : `${baseUrl}/assets/img/news/${news.image}`;
-
-        embed.setImage(imageUrl);
-        embed.setThumbnail(imageUrl);
-      }
-
-      const button = new ButtonBuilder()
-        .setLabel("Lire l'article")
-        .setStyle(ButtonStyle.Link)
-        .setURL(articleUrl);
-
-      const row = new ActionRowBuilder().addComponents(button);
-
-      await channel.send({
-        content: "@everyone 🚨 Nouvelle publication !",
-        embeds: [embed],
-        components: [row]
-      });
-
-      await db.query(
-        "UPDATE news SET sent = 1 WHERE id = ?",
-        [news.id]
-      );
-
-      console.log("📢 News envoyée :", news.title);
-    }
-
-  } catch (err) {
-    console.error("❌ Erreur checkNews :", err);
-  }
 }
 
 /* ===================================================
@@ -160,16 +59,36 @@ async function checkEvents() {
         .setColor(0x8b5cf6)
         .setTitle("📅 Nouvel événement")
         .setDescription(`**${event.title}**\n\n${event.description || "Aucune description"}`)
-        .addFields({
-          name: "🕒 Date",
-          value: `<t:${timestamp}:F>`
-        })
+        .addFields(
+          { name: "🕒 Date", value: `<t:${timestamp}:F>` },
+          { name: "✅ Je participe (0)", value: "—", inline: true },
+          { name: "🤔 Peut-être (0)", value: "—", inline: true },
+          { name: "❌ Non (0)", value: "—", inline: true }
+        )
         .setFooter({ text: "Black Sheep Events" })
         .setTimestamp();
 
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`event_yes_${event.id}`)
+          .setLabel("Je participe")
+          .setStyle(ButtonStyle.Success),
+
+        new ButtonBuilder()
+          .setCustomId(`event_maybe_${event.id}`)
+          .setLabel("Peut-être")
+          .setStyle(ButtonStyle.Secondary),
+
+        new ButtonBuilder()
+          .setCustomId(`event_no_${event.id}`)
+          .setLabel("Non")
+          .setStyle(ButtonStyle.Danger)
+      );
+
       const message = await channel.send({
         content: "@everyone 📣 Nouvel événement !",
-        embeds: [embed]
+        embeds: [embed],
+        components: [row]
       });
 
       await db.query(
@@ -184,6 +103,84 @@ async function checkEvents() {
     console.error("❌ Erreur checkEvents :", err);
   }
 }
+
+/* ===================================================
+   UPDATE MESSAGE PARTICIPANTS
+=================================================== */
+
+async function updateEventMessage(eventId, message) {
+
+  const [rows] = await db.query(`
+    SELECT username, status
+    FROM event_participants
+    WHERE event_id = ?
+  `, [eventId]);
+
+  const yes = rows.filter(r => r.status === "yes").map(r => r.username);
+  const maybe = rows.filter(r => r.status === "maybe").map(r => r.username);
+  const no = rows.filter(r => r.status === "no").map(r => r.username);
+
+  const embed = EmbedBuilder.from(message.embeds[0])
+    .setFields(
+      { name: "🕒 Date", value: message.embeds[0].fields[0].value },
+      {
+        name: `✅ Je participe (${yes.length})`,
+        value: yes.length ? yes.join("\n") : "—",
+        inline: true
+      },
+      {
+        name: `🤔 Peut-être (${maybe.length})`,
+        value: maybe.length ? maybe.join("\n") : "—",
+        inline: true
+      },
+      {
+        name: `❌ Non (${no.length})`,
+        value: no.length ? no.join("\n") : "—",
+        inline: true
+      }
+    );
+
+  await message.edit({ embeds: [embed] });
+}
+
+/* ===================================================
+   INTERACTIONS BOUTONS
+=================================================== */
+
+client.on("interactionCreate", async interaction => {
+
+  if (!interaction.isButton()) return;
+
+  const [type, response, eventId] = interaction.customId.split("_");
+
+  if (type !== "event") return;
+
+  try {
+
+    await db.query(`
+      INSERT INTO event_participants (event_id, user_id, username, status)
+      VALUES (?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE status = VALUES(status)
+    `, [
+      eventId,
+      interaction.user.id,
+      interaction.user.username,
+      response
+    ]);
+
+    await interaction.reply({
+      content: "Réponse enregistrée ✅",
+      ephemeral: true
+    });
+
+    await updateEventMessage(eventId, interaction.message);
+
+  } catch (err) {
+    console.error("❌ Erreur interaction :", err);
+  }
+
+});
+
 /* ===================================================
    START
 =================================================== */
@@ -192,10 +189,7 @@ async function start() {
 
   const requiredVars = [
     "TOKEN",
-    "NEWS_CHANNEL_ID",
     "EVENT_CHANNEL_ID",
-    "SITE_URL",
-    "NEWS_PATH",
     "MYSQL_URL"
   ];
 
@@ -211,8 +205,6 @@ async function start() {
 
 client.once("clientReady", () => {
   console.log(`🤖 Bot connecté : ${client.user.tag}`);
-
-  setInterval(checkNews, 15000);
   setInterval(checkEvents, 15000);
 });
 
