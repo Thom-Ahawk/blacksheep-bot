@@ -24,7 +24,7 @@ const client = new Client({
 let db;
 
 /* ===================================================
-   UTILITAIRE : Normalisation texte (accents + espaces)
+   NORMALISATION TEXTE (accents + espaces)
 =================================================== */
 
 function normalizeText(text) {
@@ -36,7 +36,7 @@ function normalizeText(text) {
 }
 
 /* ===================================================
-   COULEUR PAR CATÉGORIE
+   COULEURS PAR CATÉGORIE
 =================================================== */
 
 function getCategoryColor(categoryName) {
@@ -65,7 +65,7 @@ async function connectDB() {
 }
 
 /* ===================================================
-   VÉRIFICATION DES NEWS
+   CHECK NEWS
 =================================================== */
 
 async function checkNews() {
@@ -90,7 +90,7 @@ async function checkNews() {
 
       const articleUrl = `${process.env.SITE_URL}/${process.env.NEWS_PATH}/${news.slug}`;
 
-      /* ---------- IMAGE ---------- */
+      /* ================= IMAGE ================= */
 
       let imageUrl = null;
 
@@ -100,7 +100,7 @@ async function checkNews() {
           : `${process.env.SITE_URL}/uploads/${news.image}`;
       }
 
-      /* ---------- EMBED ---------- */
+      /* ================= EMBED ================= */
 
       const embed = new EmbedBuilder()
         .setColor(getCategoryColor(news.category_name))
@@ -113,11 +113,11 @@ async function checkNews() {
         .setTimestamp();
 
       if (imageUrl) {
-        embed.setThumbnail(imageUrl);
-        embed.setImage(imageUrl);
+        embed.setThumbnail(imageUrl); // petite image à droite
+        embed.setImage(imageUrl);     // grande bannière
       }
 
-      /* ---------- BOUTON ---------- */
+      /* ================= BOUTON ================= */
 
       const button = new ButtonBuilder()
         .setLabel("Lire l'article")
@@ -126,7 +126,7 @@ async function checkNews() {
 
       const row = new ActionRowBuilder().addComponents(button);
 
-      /* ---------- ENVOI ---------- */
+      /* ================= ENVOI ================= */
 
       await channel.send({
         content: "@everyone 🚨 Nouvelle publication !",
@@ -134,7 +134,7 @@ async function checkNews() {
         components: [row]
       });
 
-      /* ---------- UPDATE DB ---------- */
+      /* ================= UPDATE DB ================= */
 
       await db.query(
         "UPDATE news SET sent = 1 WHERE id = ?",
@@ -150,7 +150,7 @@ async function checkNews() {
 }
 
 /* ===================================================
-   DÉMARRAGE
+   START
 =================================================== */
 
 async function start() {
