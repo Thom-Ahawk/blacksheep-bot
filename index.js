@@ -23,23 +23,23 @@ let db;
 /* ===================================
    Couleur selon nom de catégorie
 =================================== */
-
 function getCategoryColor(categoryName) {
 
-  if (!categoryName) return "#e74c3c";
+  if (!categoryName) return 0xe74c3c; // rouge par défaut
 
   switch (categoryName.toLowerCase()) {
+
     case "armée":
-      return "#6c757d"; // Gris militaire
+      return 0x6c757d; // gris armée
 
     case "logistique":
-      return "#2ecc71"; // Vert logistique
+      return 0x2ecc71; // vert
 
     case "exploration":
-      return "#3498db"; // Bleu exploration
+      return 0x3498db; // bleu
 
     default:
-      return "#e74c3c"; // Rouge modéré
+      return 0xe74c3c; // rouge modéré
   }
 }
 
