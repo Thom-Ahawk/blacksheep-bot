@@ -1,5 +1,13 @@
-require('dotenv').config();
-const { Client, GatewayIntentBits } = require('discord.js');
+rrequire('dotenv').config();
+const { 
+  Client, 
+  GatewayIntentBits, 
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle
+} = require('discord.js');
+
 const mysql = require('mysql2/promise');
 
 const client = new Client({
@@ -45,11 +53,33 @@ async function checkNews() {
       const articleUrl =
         `${process.env.SITE_URL}/${process.env.NEWS_PATH}/${news.slug}`;
 
-      const message =
-        `📰 **${news.title}**
-🔗 ${articleUrl}`;
+      /* ===============================
+         EMBED STYLÉ
+      ================================ */
 
-      await channel.send(message);
+      const embed = new EmbedBuilder()
+        .setColor("#ff0055") // couleur personnalisable
+        .setTitle(news.title)
+        .setURL(articleUrl) // 👈 titre cliquable
+        .setDescription("Cliquez sur le bouton ci-dessous pour lire l’article.")
+        .setFooter({ text: "Black Sheep News" })
+        .setTimestamp();
+
+      /* ===============================
+         BOUTON CLIQUABLE
+      ================================ */
+
+      const button = new ButtonBuilder()
+        .setLabel("Lire l'article")
+        .setStyle(ButtonStyle.Link)
+        .setURL(articleUrl);
+
+      const row = new ActionRowBuilder().addComponents(button);
+
+      await channel.send({
+        embeds: [embed],
+        components: [row]
+      });
 
       await db.query(
         "UPDATE news SET sent = 1 WHERE id = ?",
@@ -70,21 +100,10 @@ async function checkNews() {
 
 async function start() {
 
-  if (!process.env.TOKEN) {
-    throw new Error("TOKEN manquant !");
-  }
-
-  if (!process.env.NEWS_CHANNEL_ID) {
-    throw new Error("NEWS_CHANNEL_ID manquant !");
-  }
-
-  if (!process.env.SITE_URL) {
-    throw new Error("SITE_URL manquant !");
-  }
-
-  if (!process.env.NEWS_PATH) {
-    throw new Error("NEWS_PATH manquant !");
-  }
+  if (!process.env.TOKEN) throw new Error("TOKEN manquant !");
+  if (!process.env.NEWS_CHANNEL_ID) throw new Error("NEWS_CHANNEL_ID manquant !");
+  if (!process.env.SITE_URL) throw new Error("SITE_URL manquant !");
+  if (!process.env.NEWS_PATH) throw new Error("NEWS_PATH manquant !");
 
   await connectDB();
   await client.login(process.env.TOKEN);
@@ -93,27 +112,6 @@ async function start() {
 client.once('clientReady', () => {
   console.log(`🤖 Bot connecté : ${client.user.tag}`);
   setInterval(checkNews, 15000);
-});
-
-/* ===============================
-   Commandes simples
-================================ */
-
-client.on('messageCreate', async (message) => {
-  if (message.author.bot) return;
-
-  if (message.content === "!ping") {
-    message.reply("pong");
-  }
-
-  if (message.content === "!dbtest") {
-    try {
-      const [rows] = await db.query("SELECT 1 + 1 AS result");
-      message.reply("DB OK : " + rows[0].result);
-    } catch (err) {
-      message.reply("Erreur base de données.");
-    }
-  }
 });
 
 start();
