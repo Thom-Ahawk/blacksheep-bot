@@ -95,10 +95,18 @@ async function checkNews() {
       let imageUrl = null;
 
       if (news.image) {
-        imageUrl = news.image.startsWith("http")
-          ? news.image
-          : `${process.env.SITE_URL}/Black-Sheep/assets/img/news/${news.image}`;
-      }
+
+  const baseUrl = process.env.SITE_URL.replace(/\/$/, "");
+
+  const imageUrl = news.image.startsWith("http")
+    ? news.image
+    : `${baseUrl}/assets/img/news/${news.image}`;
+
+  console.log("Image URL envoyée :", imageUrl);
+
+  embed.setImage(imageUrl);
+  embed.setThumbnail(imageUrl);
+}
 
       /* ================= EMBED ================= */
 
