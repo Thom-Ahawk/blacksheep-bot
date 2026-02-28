@@ -144,7 +144,7 @@ async function checkEvents() {
       SELECT *
       FROM events
       WHERE sent = 0
-      ORDER BY start_datetime ASC
+      ORDER BY event_date ASC
     `);
 
     if (!rows.length) return;
@@ -154,30 +154,16 @@ async function checkEvents() {
 
     for (const event of rows) {
 
-      const startTimestamp = Math.floor(new Date(event.start_datetime).getTime() / 1000);
-
-      const endTimestamp = event.end_datetime
-        ? Math.floor(new Date(event.end_datetime).getTime() / 1000)
-        : null;
+      const timestamp = Math.floor(new Date(event.event_date).getTime() / 1000);
 
       const embed = new EmbedBuilder()
         .setColor(0x8b5cf6)
         .setTitle("📅 Nouvel événement")
         .setDescription(`**${event.title}**\n\n${event.description || "Aucune description"}`)
-        .addFields(
-          {
-            name: "🕒 Début",
-            value: `<t:${startTimestamp}:F>`,
-            inline: true
-          },
-          {
-            name: "🏁 Fin",
-            value: endTimestamp
-              ? `<t:${endTimestamp}:F>`
-              : "Non définie",
-            inline: true
-          }
-        )
+        .addFields({
+          name: "🕒 Date",
+          value: `<t:${timestamp}:F>`
+        })
         .setFooter({ text: "Black Sheep Events" })
         .setTimestamp();
 
@@ -198,7 +184,6 @@ async function checkEvents() {
     console.error("❌ Erreur checkEvents :", err);
   }
 }
-
 /* ===================================================
    START
 =================================================== */
