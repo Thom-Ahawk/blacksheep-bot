@@ -1,64 +1,72 @@
-require('dotenv').config();
-const { 
-  Client, 
-  GatewayIntentBits, 
+require("dotenv").config();
+const {
+  Client,
+  GatewayIntentBits,
   EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle
-} = require('discord.js');
+} = require("discord.js");
 
-const mysql = require('mysql2/promise');
+const mysql = require("mysql2/promise");
+
+/* ===================================================
+   CLIENT DISCORD
+=================================================== */
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.GuildMessages
   ]
 });
 
 let db;
 
-/* ===================================
-   Couleur selon nom de catégorie
-=================================== */
-function getCategoryColor(categoryName) {
+/* ===================================================
+   UTILITAIRE : Normalisation texte (accents + espaces)
+=================================================== */
 
-  if (!categoryName) return 0xe74c3c; // rouge par défaut
-
-  switch (categoryName.toLowerCase()) {
-
-    case "armée":
-      return 0x6c757d; // gris armée
-
-    case "logistique":
-      return 0x2ecc71; // vert
-
-    case "exploration":
-      return 0x3498db; // bleu
-
-    default:
-      return 0xe74c3c; // rouge modéré
-  }
+function normalizeText(text) {
+  return text
+    ?.toLowerCase()
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
 }
 
-/* ===================================
-   Connexion MySQL
-=================================== */
+/* ===================================================
+   COULEUR PAR CATÉGORIE
+=================================================== */
+
+function getCategoryColor(categoryName) {
+  const normalized = normalizeText(categoryName);
+
+  const colors = {
+    armee: 0x6c757d,
+    logistique: 0x2ecc71,
+    exploration: 0x3498db
+  };
+
+  return colors[normalized] || 0xe74c3c;
+}
+
+/* ===================================================
+   CONNEXION MYSQL
+=================================================== */
 
 async function connectDB() {
   if (!process.env.MYSQL_URL) {
-    throw new Error("MYSQL_URL manquant !");
+    throw new Error("❌ MYSQL_URL manquant !");
   }
 
   db = await mysql.createConnection(process.env.MYSQL_URL);
   console.log("✅ MySQL connecté !");
 }
 
-/* ===================================
-   Vérification des news
-=================================== */
+/* ===================================================
+   VÉRIFICATION DES NEWS
+=================================================== */
 
 async function checkNews() {
   try {
@@ -70,25 +78,46 @@ async function checkNews() {
       ORDER BY news.id ASC
     `);
 
-    if (rows.length === 0) return;
+    if (!rows.length) return;
 
     const channel = await client.channels.fetch(process.env.NEWS_CHANNEL_ID);
-    if (!channel) return;
+    if (!channel) {
+      console.error("❌ Channel introuvable.");
+      return;
+    }
 
     for (const news of rows) {
 
-      const articleUrl =
-        `${process.env.SITE_URL}/${process.env.NEWS_PATH}/${news.slug}`;
+      const articleUrl = `${process.env.SITE_URL}/${process.env.NEWS_PATH}/${news.slug}`;
+
+      /* ---------- IMAGE ---------- */
+
+      let imageUrl = null;
+
+      if (news.image) {
+        imageUrl = news.image.startsWith("http")
+          ? news.image
+          : `${process.env.SITE_URL}/uploads/${news.image}`;
+      }
+
+      /* ---------- EMBED ---------- */
 
       const embed = new EmbedBuilder()
         .setColor(getCategoryColor(news.category_name))
         .setTitle(news.title)
         .setURL(articleUrl)
         .setDescription("Cliquez sur le bouton ci-dessous pour lire l’article.")
-        .setFooter({ 
+        .setFooter({
           text: `Catégorie : ${news.category_name || "Non définie"}`
         })
         .setTimestamp();
+
+      if (imageUrl) {
+        embed.setThumbnail(imageUrl);
+        embed.setImage(imageUrl);
+      }
+
+      /* ---------- BOUTON ---------- */
 
       const button = new ButtonBuilder()
         .setLabel("Lire l'article")
@@ -97,41 +126,54 @@ async function checkNews() {
 
       const row = new ActionRowBuilder().addComponents(button);
 
+      /* ---------- ENVOI ---------- */
+
       await channel.send({
         content: "@everyone 🚨 Nouvelle publication !",
         embeds: [embed],
         components: [row]
       });
 
+      /* ---------- UPDATE DB ---------- */
+
       await db.query(
         "UPDATE news SET sent = 1 WHERE id = ?",
         [news.id]
       );
 
-      console.log("News envoyée :", news.title);
+      console.log("📢 News envoyée :", news.title);
     }
 
   } catch (err) {
-    console.error("Erreur checkNews :", err);
+    console.error("❌ Erreur checkNews :", err);
   }
 }
 
-/* ===================================
-   Démarrage
-=================================== */
+/* ===================================================
+   DÉMARRAGE
+=================================================== */
 
 async function start() {
 
-  if (!process.env.TOKEN) throw new Error("TOKEN manquant !");
-  if (!process.env.NEWS_CHANNEL_ID) throw new Error("NEWS_CHANNEL_ID manquant !");
-  if (!process.env.SITE_URL) throw new Error("SITE_URL manquant !");
-  if (!process.env.NEWS_PATH) throw new Error("NEWS_PATH manquant !");
+  const requiredVars = [
+    "TOKEN",
+    "NEWS_CHANNEL_ID",
+    "SITE_URL",
+    "NEWS_PATH",
+    "MYSQL_URL"
+  ];
+
+  for (const variable of requiredVars) {
+    if (!process.env[variable]) {
+      throw new Error(`❌ Variable manquante : ${variable}`);
+    }
+  }
 
   await connectDB();
   await client.login(process.env.TOKEN);
 }
 
-client.once('clientReady', () => {
+client.once("clientReady", () => {
   console.log(`🤖 Bot connecté : ${client.user.tag}`);
   setInterval(checkNews, 15000);
 });
