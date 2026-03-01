@@ -33,19 +33,30 @@ async function connectDB() {
 }
 
 /* ===================================================
-   CRÉATION EMBED EVENT
+   BUILD EMBED EVENT
 =================================================== */
 
 function buildEventEmbed(event, participants = { yes: [], maybe: [], no: [] }) {
 
   const timestamp = Math.floor(new Date(event.event_date).getTime() / 1000);
 
-  return new EmbedBuilder()
+  const embed = new EmbedBuilder()
     .setColor(0x8b5cf6)
     .setTitle("📅 Événement")
     .setDescription(`**${event.title}**\n\n${event.description || "Aucune description"}`)
     .addFields(
-      { name: "🕒 Date", value: `<t:${timestamp}:F>` },
+      {
+        name: "🕒 Date",
+        value: `<t:${timestamp}:F>`
+      },
+      {
+        name: "📍 Lieu",
+        value: event.location || "Non défini"
+      },
+      {
+        name: "ℹ Informations",
+        value: event.extra_info || "Aucune"
+      },
       {
         name: `✅ Je participe (${participants.yes.length})`,
         value: participants.yes.length ? participants.yes.join("\n") : "—",
@@ -64,6 +75,12 @@ function buildEventEmbed(event, participants = { yes: [], maybe: [], no: [] }) {
     )
     .setFooter({ text: "Black Sheep Events" })
     .setTimestamp();
+
+  if (event.image) {
+    embed.setImage(event.image);
+  }
+
+  return embed;
 }
 
 /* ===================================================
@@ -126,7 +143,7 @@ async function checkEvents() {
 }
 
 /* ===================================================
-   UPDATE PARTICIPANTS MESSAGE
+   UPDATE PARTICIPANTS
 =================================================== */
 
 async function updateParticipants(eventId, message) {
@@ -156,27 +173,30 @@ async function updateParticipants(eventId, message) {
 }
 
 /* ===================================================
-   UPDATE EVENT SI MODIFIÉ
+   CHECK MODIFICATIONS EVENT
 =================================================== */
 
 async function checkEventUpdates() {
 
-  const [rows] = await db.query(`
+  const channel = await client.channels.fetch(process.env.EVENT_CHANNEL_ID);
+
+  const [events] = await db.query(`
     SELECT *
     FROM events
     WHERE sent = 1
   `);
 
-  const channel = await client.channels.fetch(process.env.EVENT_CHANNEL_ID);
-
-  for (const event of rows) {
+  for (const event of events) {
 
     if (!event.discord_message_id) continue;
 
     try {
       const message = await channel.messages.fetch(event.discord_message_id);
+
       const embed = buildEventEmbed(event);
+
       await message.edit({ embeds: [embed] });
+
     } catch (err) {
       // message supprimé manuellement
     }
@@ -184,23 +204,24 @@ async function checkEventUpdates() {
 }
 
 /* ===================================================
-   SUPPRESSION AUTO SI EVENT SUPPRIMÉ
+   SUPPRESSION SI EVENT SUPPRIMÉ
 =================================================== */
 
 async function checkDeletedEvents() {
 
   const channel = await client.channels.fetch(process.env.EVENT_CHANNEL_ID);
 
-  const [messages] = await db.query(`
+  const [rows] = await db.query(`
     SELECT discord_message_id
     FROM events
+    WHERE discord_message_id IS NOT NULL
   `);
 
-  const validIds = messages.map(m => m.discord_message_id);
+  const validIds = rows.map(r => r.discord_message_id);
 
-  const fetched = await channel.messages.fetch({ limit: 50 });
+  const messages = await channel.messages.fetch({ limit: 50 });
 
-  fetched.forEach(msg => {
+  messages.forEach(msg => {
     if (!validIds.includes(msg.id)) {
       msg.delete().catch(() => {});
     }
@@ -249,7 +270,6 @@ client.on("interactionCreate", async interaction => {
 =================================================== */
 
 async function start() {
-
   await connectDB();
   await client.login(process.env.TOKEN);
 }
