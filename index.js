@@ -33,7 +33,41 @@ async function connectDB() {
 }
 
 /* ===================================================
-   CHECK EVENTS
+   CRÉATION EMBED EVENT
+=================================================== */
+
+function buildEventEmbed(event, participants = { yes: [], maybe: [], no: [] }) {
+
+  const timestamp = Math.floor(new Date(event.event_date).getTime() / 1000);
+
+  return new EmbedBuilder()
+    .setColor(0x8b5cf6)
+    .setTitle("📅 Événement")
+    .setDescription(`**${event.title}**\n\n${event.description || "Aucune description"}`)
+    .addFields(
+      { name: "🕒 Date", value: `<t:${timestamp}:F>` },
+      {
+        name: `✅ Je participe (${participants.yes.length})`,
+        value: participants.yes.length ? participants.yes.join("\n") : "—",
+        inline: true
+      },
+      {
+        name: `🤔 Peut-être (${participants.maybe.length})`,
+        value: participants.maybe.length ? participants.maybe.join("\n") : "—",
+        inline: true
+      },
+      {
+        name: `❌ Non (${participants.no.length})`,
+        value: participants.no.length ? participants.no.join("\n") : "—",
+        inline: true
+      }
+    )
+    .setFooter({ text: "Black Sheep Events" })
+    .setTimestamp();
+}
+
+/* ===================================================
+   CHECK NOUVEAUX EVENTS
 =================================================== */
 
 async function checkEvents() {
@@ -49,24 +83,11 @@ async function checkEvents() {
     if (!rows.length) return;
 
     const channel = await client.channels.fetch(process.env.EVENT_CHANNEL_ID);
-    if (!channel) return console.error("❌ Channel events introuvable.");
+    if (!channel) return console.error("❌ Channel introuvable.");
 
     for (const event of rows) {
 
-      const timestamp = Math.floor(new Date(event.event_date).getTime() / 1000);
-
-      const embed = new EmbedBuilder()
-        .setColor(0x8b5cf6)
-        .setTitle("📅 Nouvel événement")
-        .setDescription(`**${event.title}**\n\n${event.description || "Aucune description"}`)
-        .addFields(
-          { name: "🕒 Date", value: `<t:${timestamp}:F>` },
-          { name: "✅ Je participe (0)", value: "—", inline: true },
-          { name: "🤔 Peut-être (0)", value: "—", inline: true },
-          { name: "❌ Non (0)", value: "—", inline: true }
-        )
-        .setFooter({ text: "Black Sheep Events" })
-        .setTimestamp();
+      const embed = buildEventEmbed(event);
 
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
@@ -105,10 +126,10 @@ async function checkEvents() {
 }
 
 /* ===================================================
-   UPDATE MESSAGE PARTICIPANTS
+   UPDATE PARTICIPANTS MESSAGE
 =================================================== */
 
-async function updateEventMessage(eventId, message) {
+async function updateParticipants(eventId, message) {
 
   const [rows] = await db.query(`
     SELECT username, status
@@ -116,31 +137,74 @@ async function updateEventMessage(eventId, message) {
     WHERE event_id = ?
   `, [eventId]);
 
-  const yes = rows.filter(r => r.status === "yes").map(r => r.username);
-  const maybe = rows.filter(r => r.status === "maybe").map(r => r.username);
-  const no = rows.filter(r => r.status === "no").map(r => r.username);
+  const participants = {
+    yes: rows.filter(r => r.status === "yes").map(r => r.username),
+    maybe: rows.filter(r => r.status === "maybe").map(r => r.username),
+    no: rows.filter(r => r.status === "no").map(r => r.username)
+  };
 
-  const embed = EmbedBuilder.from(message.embeds[0])
-    .setFields(
-      { name: "🕒 Date", value: message.embeds[0].fields[0].value },
-      {
-        name: `✅ Je participe (${yes.length})`,
-        value: yes.length ? yes.join("\n") : "—",
-        inline: true
-      },
-      {
-        name: `🤔 Peut-être (${maybe.length})`,
-        value: maybe.length ? maybe.join("\n") : "—",
-        inline: true
-      },
-      {
-        name: `❌ Non (${no.length})`,
-        value: no.length ? no.join("\n") : "—",
-        inline: true
-      }
-    );
+  const [eventRows] = await db.query(
+    "SELECT * FROM events WHERE id = ?",
+    [eventId]
+  );
+
+  if (!eventRows.length) return;
+
+  const embed = buildEventEmbed(eventRows[0], participants);
 
   await message.edit({ embeds: [embed] });
+}
+
+/* ===================================================
+   UPDATE EVENT SI MODIFIÉ
+=================================================== */
+
+async function checkEventUpdates() {
+
+  const [rows] = await db.query(`
+    SELECT *
+    FROM events
+    WHERE sent = 1
+  `);
+
+  const channel = await client.channels.fetch(process.env.EVENT_CHANNEL_ID);
+
+  for (const event of rows) {
+
+    if (!event.discord_message_id) continue;
+
+    try {
+      const message = await channel.messages.fetch(event.discord_message_id);
+      const embed = buildEventEmbed(event);
+      await message.edit({ embeds: [embed] });
+    } catch (err) {
+      // message supprimé manuellement
+    }
+  }
+}
+
+/* ===================================================
+   SUPPRESSION AUTO SI EVENT SUPPRIMÉ
+=================================================== */
+
+async function checkDeletedEvents() {
+
+  const channel = await client.channels.fetch(process.env.EVENT_CHANNEL_ID);
+
+  const [messages] = await db.query(`
+    SELECT discord_message_id
+    FROM events
+  `);
+
+  const validIds = messages.map(m => m.discord_message_id);
+
+  const fetched = await channel.messages.fetch({ limit: 50 });
+
+  fetched.forEach(msg => {
+    if (!validIds.includes(msg.id)) {
+      msg.delete().catch(() => {});
+    }
+  });
 }
 
 /* ===================================================
@@ -152,7 +216,6 @@ client.on("interactionCreate", async interaction => {
   if (!interaction.isButton()) return;
 
   const [type, response, eventId] = interaction.customId.split("_");
-
   if (type !== "event") return;
 
   try {
@@ -173,7 +236,7 @@ client.on("interactionCreate", async interaction => {
       ephemeral: true
     });
 
-    await updateEventMessage(eventId, interaction.message);
+    await updateParticipants(eventId, interaction.message);
 
   } catch (err) {
     console.error("❌ Erreur interaction :", err);
@@ -187,25 +250,16 @@ client.on("interactionCreate", async interaction => {
 
 async function start() {
 
-  const requiredVars = [
-    "TOKEN",
-    "EVENT_CHANNEL_ID",
-    "MYSQL_URL"
-  ];
-
-  for (const variable of requiredVars) {
-    if (!process.env[variable]) {
-      throw new Error(`❌ Variable manquante : ${variable}`);
-    }
-  }
-
   await connectDB();
   await client.login(process.env.TOKEN);
 }
 
 client.once("clientReady", () => {
   console.log(`🤖 Bot connecté : ${client.user.tag}`);
+
   setInterval(checkEvents, 15000);
+  setInterval(checkEventUpdates, 30000);
+  setInterval(checkDeletedEvents, 60000);
 });
 
 start();
