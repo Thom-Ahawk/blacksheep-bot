@@ -5,8 +5,7 @@ const {
   EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
-  ButtonStyle,
-  ComponentType
+  ButtonStyle
 } = require("discord.js");
 
 const mysql = require("mysql2/promise");
@@ -20,22 +19,23 @@ const client = new Client({
 
 let db;
 
-/* ==========================
-   CONNEXION DB
-========================== */
+/* =========================
+   DB
+========================= */
 
 async function connectDB() {
   db = await mysql.createConnection(process.env.MYSQL_URL);
   console.log("✅ MySQL connecté !");
 }
 
-/* ==========================
-   BUILD EMBED
-========================== */
+/* =========================
+   EMBED
+========================= */
 
 function buildEventEmbed(event, participants = { yes: [], maybe: [], no: [] }) {
 
-  const startTimestamp = Math.floor(new Date(event.event_start).getTime() / 1000);
+  const startTimestamp = Math.floor(new Date(event.event_date).getTime() / 1000);
+
   const endTimestamp = event.event_end
     ? Math.floor(new Date(event.event_end).getTime() / 1000)
     : null;
@@ -47,13 +47,11 @@ function buildEventEmbed(event, participants = { yes: [], maybe: [], no: [] }) {
     .addFields(
       {
         name: "🕒 Début",
-        value: `<t:${startTimestamp}:F>`,
-        inline: false
+        value: `<t:${startTimestamp}:F>`
       },
       {
         name: "🕓 Fin",
-        value: endTimestamp ? `<t:${endTimestamp}:F>` : "Non définie",
-        inline: false
+        value: endTimestamp ? `<t:${endTimestamp}:F>` : "Non définie"
       },
       {
         name: "📍 Lieu",
@@ -87,9 +85,9 @@ function buildEventEmbed(event, participants = { yes: [], maybe: [], no: [] }) {
   return embed;
 }
 
-/* ==========================
-   CHECK NOUVEAUX EVENTS
-========================== */
+/* =========================
+   NOUVEAUX EVENTS
+========================= */
 
 async function checkNewEvents() {
 
@@ -131,46 +129,16 @@ async function checkNewEvents() {
     });
 
     await db.query(`
-      UPDATE events 
+      UPDATE events
       SET sent = 1, discord_message_id = ?
       WHERE id = ?
     `, [message.id, event.id]);
   }
 }
 
-/* ==========================
-   UPDATE PARTICIPANTS
-========================== */
-
-async function updateParticipants(eventId, message) {
-
-  const [rows] = await db.query(`
-    SELECT username, status
-    FROM event_participants
-    WHERE event_id = ?
-  `, [eventId]);
-
-  const participants = {
-    yes: rows.filter(r => r.status === "yes").map(r => r.username),
-    maybe: rows.filter(r => r.status === "maybe").map(r => r.username),
-    no: rows.filter(r => r.status === "no").map(r => r.username)
-  };
-
-  const [eventRows] = await db.query(
-    "SELECT * FROM events WHERE id = ?",
-    [eventId]
-  );
-
-  if (!eventRows.length) return;
-
-  const embed = buildEventEmbed(eventRows[0], participants);
-
-  await message.edit({ embeds: [embed] });
-}
-
-/* ==========================
+/* =========================
    SUPPRESSION PROPRE
-========================== */
+========================= */
 
 async function checkExpiredOrDeletedEvents() {
 
@@ -188,7 +156,6 @@ async function checkExpiredOrDeletedEvents() {
 
     if (!event.discord_message_id) continue;
 
-    // 1️⃣ Supprimer si date de fin passée
     if (event.event_end && new Date(event.event_end) < now) {
 
       try {
@@ -201,32 +168,16 @@ async function checkExpiredOrDeletedEvents() {
           WHERE id = ?
         `, [event.id]);
 
-        console.log("🗑 Event expiré supprimé :", event.id);
+        console.log("🗑 Event terminé supprimé :", event.id);
 
       } catch (err) {}
     }
   }
-
-  // 2️⃣ Supprimer si event supprimé en base
-  const messages = await channel.messages.fetch({ limit: 50 });
-
-  messages.forEach(async msg => {
-
-    if (msg.author.id !== client.user.id) return;
-
-    const exists = events.find(e => e.discord_message_id === msg.id);
-
-    if (!exists) {
-      await msg.delete().catch(() => {});
-      console.log("🗑 Message supprimé (event supprimé en base)");
-    }
-
-  });
 }
 
-/* ==========================
+/* =========================
    INTERACTIONS
-========================== */
+========================= */
 
 client.on("interactionCreate", async interaction => {
 
@@ -251,12 +202,11 @@ client.on("interactionCreate", async interaction => {
     ephemeral: true
   });
 
-  await updateParticipants(eventId, interaction.message);
 });
 
-/* ==========================
+/* =========================
    START
-========================== */
+========================= */
 
 client.once("clientReady", () => {
   console.log(`🤖 Bot connecté : ${client.user.tag}`);
