@@ -29,11 +29,10 @@ async function connectDB() {
 }
 
 /* =========================
-   BUILD PARTICIPANTS
+   PARTICIPANTS
 ========================= */
 
 async function getParticipants(eventId) {
-
   const [rows] = await db.query(`
     SELECT username, status
     FROM event_participants
@@ -48,13 +47,12 @@ async function getParticipants(eventId) {
 }
 
 /* =========================
-   BUILD EMBED
+   EMBED
 ========================= */
 
 function buildEventEmbed(event, participants) {
 
   const startTimestamp = Math.floor(new Date(event.event_date).getTime() / 1000);
-
   const endTimestamp = event.event_end
     ? Math.floor(new Date(event.event_end).getTime() / 1000)
     : null;
@@ -93,7 +91,7 @@ function buildEventEmbed(event, participants) {
 }
 
 /* =========================
-   BUTTON ROW
+   BOUTONS
 ========================= */
 
 function buildButtons(eventId) {
@@ -102,12 +100,10 @@ function buildButtons(eventId) {
       .setCustomId(`event_yes_${eventId}`)
       .setLabel("Je participe")
       .setStyle(ButtonStyle.Success),
-
     new ButtonBuilder()
       .setCustomId(`event_maybe_${eventId}`)
       .setLabel("Peut-être")
       .setStyle(ButtonStyle.Secondary),
-
     new ButtonBuilder()
       .setCustomId(`event_no_${eventId}`)
       .setLabel("Non")
@@ -147,11 +143,13 @@ async function checkNewEvents() {
       SET sent = 1, discord_message_id = ?
       WHERE id = ?
     `, [message.id, event.id]);
+
+    console.log("📅 Event envoyé :", event.title);
   }
 }
 
 /* =========================
-   UPDATE EVENTS (modif + votes)
+   MISE À JOUR EVENTS
 ========================= */
 
 async function checkEventUpdates() {
@@ -161,12 +159,10 @@ async function checkEventUpdates() {
   const [events] = await db.query(`
     SELECT *
     FROM events
-    WHERE sent = 1
+    WHERE sent = 1 AND discord_message_id IS NOT NULL
   `);
 
   for (const event of events) {
-
-    if (!event.discord_message_id) continue;
 
     try {
       const message = await channel.messages.fetch(event.discord_message_id);
@@ -179,66 +175,56 @@ async function checkEventUpdates() {
         components: [buildButtons(event.id)]
       });
 
-    } catch (err) {}
+    } catch (err) {
+      // message supprimé manuellement
+    }
   }
 }
 
 /* =========================
-   SUPPRESSION
+   SUPPRESSION STABLE
 ========================= */
 
 async function checkExpiredOrDeletedEvents() {
 
   const channel = await client.channels.fetch(process.env.EVENT_CHANNEL_ID);
-
-  const [events] = await db.query(`
-    SELECT id, discord_message_id, event_end
-    FROM events
-    WHERE discord_message_id IS NOT NULL
-  `);
-
   const now = new Date();
 
-  for (const event of events) {
-
-    if (!event.discord_message_id) continue;
-
-    try {
-
-      const message = await channel.messages.fetch(event.discord_message_id);
-
-      // Suppression si date fin dépassée
-      if (event.event_end && new Date(event.event_end) < now) {
-
-        await message.delete();
-
-        await db.query(`
-          UPDATE events
-          SET discord_message_id = NULL
-          WHERE id = ?
-        `, [event.id]);
-
-        console.log("🗑 Event expiré supprimé :", event.id);
-      }
-
-    } catch (err) {}
-  }
-
-  // Suppression si supprimé en base
   const messages = await channel.messages.fetch({ limit: 50 });
 
-  messages.forEach(async msg => {
+  for (const msg of messages.values()) {
 
-    if (msg.author.id !== client.user.id) return;
+    if (msg.author.id !== client.user.id) continue;
 
-    const exists = events.find(e => e.discord_message_id === msg.id);
+    const [rows] = await db.query(`
+      SELECT id, event_end
+      FROM events
+      WHERE discord_message_id = ?
+    `, [msg.id]);
 
-    if (!exists) {
+    // Event supprimé en base
+    if (!rows.length) {
       await msg.delete().catch(() => {});
-      console.log("🗑 Event supprimé depuis calendrier");
+      console.log("🗑 Event supprimé en base");
+      continue;
     }
 
-  });
+    const event = rows[0];
+
+    // Event expiré
+    if (event.event_end && new Date(event.event_end) < now) {
+
+      await msg.delete().catch(() => {});
+
+      await db.query(`
+        UPDATE events
+        SET discord_message_id = NULL
+        WHERE id = ?
+      `, [event.id]);
+
+      console.log("🗑 Event expiré supprimé :", event.id);
+    }
+  }
 }
 
 /* =========================
