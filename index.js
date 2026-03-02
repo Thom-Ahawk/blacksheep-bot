@@ -5,14 +5,11 @@ const {
   EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
-  ButtonStyle
+  ButtonStyle,
+  ComponentType
 } = require("discord.js");
 
 const mysql = require("mysql2/promise");
-
-/* ===================================================
-   CLIENT DISCORD
-=================================================== */
 
 const client = new Client({
   intents: [
@@ -23,22 +20,25 @@ const client = new Client({
 
 let db;
 
-/* ===================================================
-   CONNEXION MYSQL
-=================================================== */
+/* ==========================
+   CONNEXION DB
+========================== */
 
 async function connectDB() {
   db = await mysql.createConnection(process.env.MYSQL_URL);
   console.log("✅ MySQL connecté !");
 }
 
-/* ===================================================
-   BUILD EMBED EVENT
-=================================================== */
+/* ==========================
+   BUILD EMBED
+========================== */
 
 function buildEventEmbed(event, participants = { yes: [], maybe: [], no: [] }) {
 
-  const timestamp = Math.floor(new Date(event.event_date).getTime() / 1000);
+  const startTimestamp = Math.floor(new Date(event.event_start).getTime() / 1000);
+  const endTimestamp = event.event_end
+    ? Math.floor(new Date(event.event_end).getTime() / 1000)
+    : null;
 
   const embed = new EmbedBuilder()
     .setColor(0x8b5cf6)
@@ -46,8 +46,14 @@ function buildEventEmbed(event, participants = { yes: [], maybe: [], no: [] }) {
     .setDescription(`**${event.title}**\n\n${event.description || "Aucune description"}`)
     .addFields(
       {
-        name: "🕒 Date",
-        value: `<t:${timestamp}:F>`
+        name: "🕒 Début",
+        value: `<t:${startTimestamp}:F>`,
+        inline: false
+      },
+      {
+        name: "🕓 Fin",
+        value: endTimestamp ? `<t:${endTimestamp}:F>` : "Non définie",
+        inline: false
       },
       {
         name: "📍 Lieu",
@@ -76,75 +82,65 @@ function buildEventEmbed(event, participants = { yes: [], maybe: [], no: [] }) {
     .setFooter({ text: "Black Sheep Events" })
     .setTimestamp();
 
-  if (event.image) {
-    embed.setImage(event.image);
-  }
+  if (event.image) embed.setImage(event.image);
 
   return embed;
 }
 
-/* ===================================================
+/* ==========================
    CHECK NOUVEAUX EVENTS
-=================================================== */
+========================== */
 
-async function checkEvents() {
-  try {
+async function checkNewEvents() {
 
-    const [rows] = await db.query(`
-      SELECT *
-      FROM events
-      WHERE sent = 0
-      ORDER BY event_date ASC
-    `);
+  const [events] = await db.query(`
+    SELECT *
+    FROM events
+    WHERE sent = 0
+  `);
 
-    if (!rows.length) return;
+  if (!events.length) return;
 
-    const channel = await client.channels.fetch(process.env.EVENT_CHANNEL_ID);
-    if (!channel) return console.error("❌ Channel introuvable.");
+  const channel = await client.channels.fetch(process.env.EVENT_CHANNEL_ID);
 
-    for (const event of rows) {
+  for (const event of events) {
 
-      const embed = buildEventEmbed(event);
+    const embed = buildEventEmbed(event);
 
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`event_yes_${event.id}`)
-          .setLabel("Je participe")
-          .setStyle(ButtonStyle.Success),
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`event_yes_${event.id}`)
+        .setLabel("Je participe")
+        .setStyle(ButtonStyle.Success),
 
-        new ButtonBuilder()
-          .setCustomId(`event_maybe_${event.id}`)
-          .setLabel("Peut-être")
-          .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`event_maybe_${event.id}`)
+        .setLabel("Peut-être")
+        .setStyle(ButtonStyle.Secondary),
 
-        new ButtonBuilder()
-          .setCustomId(`event_no_${event.id}`)
-          .setLabel("Non")
-          .setStyle(ButtonStyle.Danger)
-      );
+      new ButtonBuilder()
+        .setCustomId(`event_no_${event.id}`)
+        .setLabel("Non")
+        .setStyle(ButtonStyle.Danger)
+    );
 
-      const message = await channel.send({
-        content: "@everyone 📣 Nouvel événement !",
-        embeds: [embed],
-        components: [row]
-      });
+    const message = await channel.send({
+      content: "@everyone 📣 Nouvel événement !",
+      embeds: [embed],
+      components: [row]
+    });
 
-      await db.query(
-        "UPDATE events SET sent = 1, discord_message_id = ? WHERE id = ?",
-        [message.id, event.id]
-      );
-
-      console.log("📅 Event envoyé :", event.title);
-    }
-
-  } catch (err) {
-    console.error("❌ Erreur checkEvents :", err);
+    await db.query(`
+      UPDATE events 
+      SET sent = 1, discord_message_id = ?
+      WHERE id = ?
+    `, [message.id, event.id]);
   }
 }
 
-/* ===================================================
+/* ==========================
    UPDATE PARTICIPANTS
-=================================================== */
+========================== */
 
 async function updateParticipants(eventId, message) {
 
@@ -172,65 +168,65 @@ async function updateParticipants(eventId, message) {
   await message.edit({ embeds: [embed] });
 }
 
-/* ===================================================
-   CHECK MODIFICATIONS EVENT
-=================================================== */
+/* ==========================
+   SUPPRESSION PROPRE
+========================== */
 
-async function checkEventUpdates() {
+async function checkExpiredOrDeletedEvents() {
 
   const channel = await client.channels.fetch(process.env.EVENT_CHANNEL_ID);
 
   const [events] = await db.query(`
-    SELECT *
+    SELECT id, discord_message_id, event_end
     FROM events
-    WHERE sent = 1
+    WHERE discord_message_id IS NOT NULL
   `);
+
+  const now = new Date();
 
   for (const event of events) {
 
     if (!event.discord_message_id) continue;
 
-    try {
-      const message = await channel.messages.fetch(event.discord_message_id);
+    // 1️⃣ Supprimer si date de fin passée
+    if (event.event_end && new Date(event.event_end) < now) {
 
-      const embed = buildEventEmbed(event);
+      try {
+        const message = await channel.messages.fetch(event.discord_message_id);
+        await message.delete();
 
-      await message.edit({ embeds: [embed] });
+        await db.query(`
+          UPDATE events
+          SET discord_message_id = NULL
+          WHERE id = ?
+        `, [event.id]);
 
-    } catch (err) {
-      // message supprimé manuellement
+        console.log("🗑 Event expiré supprimé :", event.id);
+
+      } catch (err) {}
     }
   }
-}
 
-/* ===================================================
-   SUPPRESSION SI EVENT SUPPRIMÉ
-=================================================== */
-
-async function checkDeletedEvents() {
-
-  const channel = await client.channels.fetch(process.env.EVENT_CHANNEL_ID);
-
-  const [rows] = await db.query(`
-    SELECT discord_message_id
-    FROM events
-    WHERE discord_message_id IS NOT NULL
-  `);
-
-  const validIds = rows.map(r => r.discord_message_id);
-
+  // 2️⃣ Supprimer si event supprimé en base
   const messages = await channel.messages.fetch({ limit: 50 });
 
-  messages.forEach(msg => {
-    if (!validIds.includes(msg.id)) {
-      msg.delete().catch(() => {});
+  messages.forEach(async msg => {
+
+    if (msg.author.id !== client.user.id) return;
+
+    const exists = events.find(e => e.discord_message_id === msg.id);
+
+    if (!exists) {
+      await msg.delete().catch(() => {});
+      console.log("🗑 Message supprimé (event supprimé en base)");
     }
+
   });
 }
 
-/* ===================================================
-   INTERACTIONS BOUTONS
-=================================================== */
+/* ==========================
+   INTERACTIONS
+========================== */
 
 client.on("interactionCreate", async interaction => {
 
@@ -239,47 +235,39 @@ client.on("interactionCreate", async interaction => {
   const [type, response, eventId] = interaction.customId.split("_");
   if (type !== "event") return;
 
-  try {
+  await db.query(`
+    INSERT INTO event_participants (event_id, user_id, username, status)
+    VALUES (?, ?, ?, ?)
+    ON DUPLICATE KEY UPDATE status = VALUES(status)
+  `, [
+    eventId,
+    interaction.user.id,
+    interaction.user.username,
+    response
+  ]);
 
-    await db.query(`
-      INSERT INTO event_participants (event_id, user_id, username, status)
-      VALUES (?, ?, ?, ?)
-      ON DUPLICATE KEY UPDATE status = VALUES(status)
-    `, [
-      eventId,
-      interaction.user.id,
-      interaction.user.username,
-      response
-    ]);
+  await interaction.reply({
+    content: "Réponse enregistrée ✅",
+    ephemeral: true
+  });
 
-    await interaction.reply({
-      content: "Réponse enregistrée ✅",
-      ephemeral: true
-    });
-
-    await updateParticipants(eventId, interaction.message);
-
-  } catch (err) {
-    console.error("❌ Erreur interaction :", err);
-  }
-
+  await updateParticipants(eventId, interaction.message);
 });
 
-/* ===================================================
+/* ==========================
    START
-=================================================== */
+========================== */
+
+client.once("clientReady", () => {
+  console.log(`🤖 Bot connecté : ${client.user.tag}`);
+
+  setInterval(checkNewEvents, 15000);
+  setInterval(checkExpiredOrDeletedEvents, 30000);
+});
 
 async function start() {
   await connectDB();
   await client.login(process.env.TOKEN);
 }
-
-client.once("clientReady", () => {
-  console.log(`🤖 Bot connecté : ${client.user.tag}`);
-
-  setInterval(checkEvents, 15000);
-  setInterval(checkEventUpdates, 30000);
-  setInterval(checkDeletedEvents, 60000);
-});
 
 start();
