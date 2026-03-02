@@ -29,10 +29,29 @@ async function connectDB() {
 }
 
 /* =========================
-   EMBED
+   BUILD PARTICIPANTS
 ========================= */
 
-function buildEventEmbed(event, participants = { yes: [], maybe: [], no: [] }) {
+async function getParticipants(eventId) {
+
+  const [rows] = await db.query(`
+    SELECT username, status
+    FROM event_participants
+    WHERE event_id = ?
+  `, [eventId]);
+
+  return {
+    yes: rows.filter(r => r.status === "yes").map(r => r.username),
+    maybe: rows.filter(r => r.status === "maybe").map(r => r.username),
+    no: rows.filter(r => r.status === "no").map(r => r.username)
+  };
+}
+
+/* =========================
+   BUILD EMBED
+========================= */
+
+function buildEventEmbed(event, participants) {
 
   const startTimestamp = Math.floor(new Date(event.event_date).getTime() / 1000);
 
@@ -45,22 +64,10 @@ function buildEventEmbed(event, participants = { yes: [], maybe: [], no: [] }) {
     .setTitle("📅 Événement")
     .setDescription(`**${event.title}**\n\n${event.description || "Aucune description"}`)
     .addFields(
-      {
-        name: "🕒 Début",
-        value: `<t:${startTimestamp}:F>`
-      },
-      {
-        name: "🕓 Fin",
-        value: endTimestamp ? `<t:${endTimestamp}:F>` : "Non définie"
-      },
-      {
-        name: "📍 Lieu",
-        value: event.location || "Non défini"
-      },
-      {
-        name: "ℹ Informations",
-        value: event.extra_info || "Aucune"
-      },
+      { name: "🕒 Début", value: `<t:${startTimestamp}:F>` },
+      { name: "🕓 Fin", value: endTimestamp ? `<t:${endTimestamp}:F>` : "Non définie" },
+      { name: "📍 Lieu", value: event.location || "Non défini" },
+      { name: "ℹ Informations", value: event.extra_info || "Aucune" },
       {
         name: `✅ Je participe (${participants.yes.length})`,
         value: participants.yes.length ? participants.yes.join("\n") : "—",
@@ -86,6 +93,29 @@ function buildEventEmbed(event, participants = { yes: [], maybe: [], no: [] }) {
 }
 
 /* =========================
+   BUTTON ROW
+========================= */
+
+function buildButtons(eventId) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`event_yes_${eventId}`)
+      .setLabel("Je participe")
+      .setStyle(ButtonStyle.Success),
+
+    new ButtonBuilder()
+      .setCustomId(`event_maybe_${eventId}`)
+      .setLabel("Peut-être")
+      .setStyle(ButtonStyle.Secondary),
+
+    new ButtonBuilder()
+      .setCustomId(`event_no_${eventId}`)
+      .setLabel("Non")
+      .setStyle(ButtonStyle.Danger)
+  );
+}
+
+/* =========================
    NOUVEAUX EVENTS
 ========================= */
 
@@ -103,29 +133,13 @@ async function checkNewEvents() {
 
   for (const event of events) {
 
-    const embed = buildEventEmbed(event);
-
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`event_yes_${event.id}`)
-        .setLabel("Je participe")
-        .setStyle(ButtonStyle.Success),
-
-      new ButtonBuilder()
-        .setCustomId(`event_maybe_${event.id}`)
-        .setLabel("Peut-être")
-        .setStyle(ButtonStyle.Secondary),
-
-      new ButtonBuilder()
-        .setCustomId(`event_no_${event.id}`)
-        .setLabel("Non")
-        .setStyle(ButtonStyle.Danger)
-    );
+    const participants = { yes: [], maybe: [], no: [] };
+    const embed = buildEventEmbed(event, participants);
 
     const message = await channel.send({
       content: "@everyone 📣 Nouvel événement !",
       embeds: [embed],
-      components: [row]
+      components: [buildButtons(event.id)]
     });
 
     await db.query(`
@@ -137,7 +151,40 @@ async function checkNewEvents() {
 }
 
 /* =========================
-   SUPPRESSION PROPRE
+   UPDATE EVENTS (modif + votes)
+========================= */
+
+async function checkEventUpdates() {
+
+  const channel = await client.channels.fetch(process.env.EVENT_CHANNEL_ID);
+
+  const [events] = await db.query(`
+    SELECT *
+    FROM events
+    WHERE sent = 1
+  `);
+
+  for (const event of events) {
+
+    if (!event.discord_message_id) continue;
+
+    try {
+      const message = await channel.messages.fetch(event.discord_message_id);
+
+      const participants = await getParticipants(event.id);
+      const embed = buildEventEmbed(event, participants);
+
+      await message.edit({
+        embeds: [embed],
+        components: [buildButtons(event.id)]
+      });
+
+    } catch (err) {}
+  }
+}
+
+/* =========================
+   SUPPRESSION
 ========================= */
 
 async function checkExpiredOrDeletedEvents() {
@@ -156,10 +203,13 @@ async function checkExpiredOrDeletedEvents() {
 
     if (!event.discord_message_id) continue;
 
-    if (event.event_end && new Date(event.event_end) < now) {
+    try {
 
-      try {
-        const message = await channel.messages.fetch(event.discord_message_id);
+      const message = await channel.messages.fetch(event.discord_message_id);
+
+      // Suppression si date fin dépassée
+      if (event.event_end && new Date(event.event_end) < now) {
+
         await message.delete();
 
         await db.query(`
@@ -168,11 +218,27 @@ async function checkExpiredOrDeletedEvents() {
           WHERE id = ?
         `, [event.id]);
 
-        console.log("🗑 Event terminé supprimé :", event.id);
+        console.log("🗑 Event expiré supprimé :", event.id);
+      }
 
-      } catch (err) {}
-    }
+    } catch (err) {}
   }
+
+  // Suppression si supprimé en base
+  const messages = await channel.messages.fetch({ limit: 50 });
+
+  messages.forEach(async msg => {
+
+    if (msg.author.id !== client.user.id) return;
+
+    const exists = events.find(e => e.discord_message_id === msg.id);
+
+    if (!exists) {
+      await msg.delete().catch(() => {});
+      console.log("🗑 Event supprimé depuis calendrier");
+    }
+
+  });
 }
 
 /* =========================
@@ -202,6 +268,7 @@ client.on("interactionCreate", async interaction => {
     ephemeral: true
   });
 
+  await checkEventUpdates(); // mise à jour instantanée
 });
 
 /* =========================
@@ -212,6 +279,7 @@ client.once("clientReady", () => {
   console.log(`🤖 Bot connecté : ${client.user.tag}`);
 
   setInterval(checkNewEvents, 15000);
+  setInterval(checkEventUpdates, 30000);
   setInterval(checkExpiredOrDeletedEvents, 30000);
 });
 
