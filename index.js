@@ -14,7 +14,7 @@ const mysql = require("mysql2/promise");
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages
+    GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent
   ]
 });
