@@ -291,7 +291,18 @@ async function checkNews() {
       embed.setImage(`https://dev.black-sheep.space/assets/img/news/${article.image}`);
     }
 
-    await channel.send({ embeds: [embed] });
+    const row = new ActionRowBuilder().addComponents(
+  new ButtonBuilder()
+    .setLabel("Lire l'article")
+    .setStyle(ButtonStyle.Link)
+    .setURL(`https://dev.black-sheep.space/actualites/${article.slug}`)
+);
+
+await channel.send({
+  content: "@everyone 📰 Nouvelle actualité !",
+  embeds: [embed],
+  components: [row]
+});
 
     await db.query(`
       UPDATE news
