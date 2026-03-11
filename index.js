@@ -1,3 +1,4 @@
+console.log("BOT FILE LOADED");
 require("dotenv").config();
 const {
   Client,
@@ -14,6 +15,7 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages
+    GatewayIntentBits.MessageContent
   ]
 });
 
@@ -258,12 +260,64 @@ client.on("interactionCreate", async interaction => {
 });
 
 /* =========================
+   NEWS
+========================= */
+async function checkNews() {
+
+  console.log("🔥 CHECK NEWS EXECUTED");
+
+  const [news] = await db.query(`
+    SELECT *
+    FROM news
+    WHERE sent = 0
+  `);
+
+  console.log("📰 News trouvées :", news.length);
+
+  if (!news.length) return;
+
+  const channel = await client.channels.fetch(process.env.NEWS_CHANNEL_ID);
+
+  for (const article of news) {
+
+    const embed = new EmbedBuilder()
+      .setColor(0x3b82f6)
+      .setTitle("📰 Nouvelle actualité")
+      .setDescription(`**${article.title}**`)
+      .setURL(`https://dev.black-sheep.space/actualites/${article.slug}`)
+      .setTimestamp();
+
+    if (article.image) {
+      embed.setImage(`https://dev.black-sheep.space/assets/img/news/${article.image}`);
+    }
+
+    await channel.send({ embeds: [embed] });
+
+    await db.query(`
+      UPDATE news
+      SET sent = 1
+      WHERE id = ?
+    `, [article.id]);
+
+    console.log("📰 News envoyée :", article.title);
+
+  }
+}
+
+/* =========================
    START
 ========================= */
+client.once("ready", async () => {
+  console.log("READY TRIGGERED");
+  console.log("NEWS_CHANNEL_ID =", process.env.NEWS_CHANNEL_ID);
 
-client.once("clientReady", () => {
   console.log(`🤖 Bot connecté : ${client.user.tag}`);
+  console.log("🚀 Lancement des scanners...");
 
+  await checkNews();
+  await checkNewEvents();
+
+  setInterval(checkNews, 15000);
   setInterval(checkNewEvents, 15000);
   setInterval(checkEventUpdates, 30000);
   setInterval(checkExpiredOrDeletedEvents, 30000);
@@ -273,5 +327,6 @@ async function start() {
   await connectDB();
   await client.login(process.env.TOKEN);
 }
+
 
 start();
